@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+
+<style>
+    /* Minecraft Header Style */
+    .minecraft-header {
+    background-color: #1f1f1f; /* Dark Gray */
+    color: #fff; /* White */
+    padding: 20px;
+    text-align: center;
+    font-size: 24px;
+    font-family: 'Minecraft', sans-serif; /* Minecraft Font */
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 4px solid #4a4a4a; /* Darker Gray Border */
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Shadow */
+    }
+
+    /* Minecraft Button Style */
+    .minecraft-button {
+    background-color: #2ecc71; /* Minecraft Green */
+    border: 2px solid #27ae60; /* Darker Green */
+    color: #fff; /* White */
+    padding: 10px 20px;
+    font-size: 18px;
+    font-family: 'Minecraft', sans-serif; /* Minecraft Font */
+    text-transform: uppercase;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.3s ease;
+    }
+
+    .minecraft-button:hover {
+    background-color: #27ae60; /* Darker Green */
+    border-color: #2ecc71; /* Minecraft Green */
+    }
+
+    .minecraft-button:active {
+    background-color: #1e8449; /* Even Darker Green */
+    }
+</style>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yalong Final Project: Blocks of Hanoi</title>
+</head>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+attribute  vec4 vPosition;
+attribute  vec3 vNormal;
+attribute  vec2 vTexCoord;
+
+varying vec4 fColor;
+varying vec2 fTexCoord;
+
+uniform mat4 transformationMatrix;
+
+uniform vec4 ambientProduct, diffuseProduct, specularProduct;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+uniform vec4 lightPosition;
+uniform float shininess;
+
+void main()
+{
+
+    
+    vec3 pos = -(modelViewMatrix * vPosition).xyz;
+    
+    //fixed light postion
+    
+    vec3 light = lightPosition.xyz;
+    vec3 L = normalize( light - pos );
+
+	
+    vec3 E = normalize( -pos );
+    vec3 H = normalize( L + E );
+    
+    vec4 NN = vec4(vNormal,0);
+
+    // Transform vertex normal into eye coordinates
+       
+    vec3 N = normalize( (modelViewMatrix*NN).xyz);
+
+    // Compute terms in the illumination equation
+    vec4 ambient = ambientProduct;
+
+    float Kd = max( dot(L, N), 0.0 );
+    vec4  diffuse = Kd*diffuseProduct;
+
+    float Ks = pow( max(dot(N, H), 0.0), shininess );
+    vec4  specular = Ks * specularProduct;
+    
+    if( dot(L, N) < 0.0 ) {
+	specular = vec4(0.0, 0.0, 0.0, 1.0);
+    } 
+
+    mat4 transformedModelView = modelViewMatrix * transformationMatrix;
+
+    gl_Position = projectionMatrix * transformedModelView * vPosition;
+    fColor = ambient + diffuse + specular;
+    
+    fColor.a = 1.0;
+    fTexCoord = vTexCoord;
+}
+
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+
+precision mediump float;
+
+varying vec4 fColor;
+varying vec2 fTexCoord;
+
+uniform sampler2D sampler;
+
+void
+main()
+{
+    gl_FragColor = texture2D(sampler, fTexCoord) * fColor;
+}
+</script>
+
+<script type="text/javascript" src="./common/webgl-utils.js"></script>
+<script type="text/javascript" src="./common/initShaders.js"></script>
+<script type="text/javascript" src="./common/MV.js"></script>
+<script type="text/javascript" src="script.js"></script>
+
+<body>
+    <center>
+    <h1 class="minecraft-header" width="768" height="768">Blocks of Hanoi</h1>
+    <canvas id="gl-canvas" width="768" height="768" style="border:3px solid #000000;">
+    Oops ... your browser doesn't support the HTML5 canvas element
+    </canvas>
+    <div id="button-container">
+        <button class="minecraft-button" id="Reset">Reset</button>
+        <button class="minecraft-button" id="Solve">Solve</button>
+        <button class="minecraft-button" id="Previous">Previous</button>
+    </div>
+    </center>
+</body>
+</html>

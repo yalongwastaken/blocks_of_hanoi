@@ -1,0 +1,814 @@
+/*
+Anthony Yalong
+Blocks of Hanoi
+*/
+
+"use strict";
+
+var canvas;
+var gl;
+
+// vertices for a cube
+var numVertices = 36;
+
+// arrays
+var pointsArray = [];
+var normalsArray = [];
+var texCoordsArray = [];
+
+// translating, rotating, and scaling the cube
+var transformationMatrix;
+var rMatrix;
+
+// viewing
+var near = 0.3;
+var far = 40;
+var fovy = 45.0; 
+var aspect; 
+
+var eye;
+const at = vec3(0.0, 0, 0.0);
+const up = vec3(0.0, 1.0, 0.0);
+
+var zoomLevel = 0;
+var yZoom = 5;
+
+// lighting
+var radius = 20.0;
+var theta = 0.0;
+var phi = Math.PI / 4;
+
+var lightPosition;
+var lightAmbient;
+var lightDiffuse;
+var lightSpecular;
+
+var materialAmbient;
+var materialDiffuse;
+var materialSpecular;
+var materialShininess;
+
+var ambientProduct;
+var diffuseProduct;
+var specularProduct;
+
+var ambientColor, diffuseColor, specularColor;
+var program;
+
+// for both lighting and perspective
+var mvMatrix, pMatrix;
+var modelView, projection;
+
+// vertices for a cube
+var vertices = [
+   vec4(-0.5, -0.5, 0.5, 1.0), // Vertex 0: Front bottom left
+   vec4(-0.5, 0.5, 0.5, 1.0), // Vertex 1: Front top left
+   vec4(0.5, 0.5, 0.5, 1.0), // Vertex 2: Front top right
+   vec4(0.5, -0.5, 0.5, 1.0), // Vertex 3: Front bottom right
+   vec4(-0.5, -0.5, -0.5, 1.0), // Vertex 4: Back bottom left
+   vec4(-0.5, 0.5, -0.5, 1.0), // Vertex 5: Back top left
+   vec4(0.5, 0.5, -0.5, 1.0), // Vertex 6: Back top right
+   vec4(0.5, -0.5, -0.5, 1.0) // Vertex 7: Back bottom right
+];
+
+// texture coordinate mapping for the cube
+var texCoords = [
+   // entire image
+   vec2(0, 0),
+   vec2(0, 1),
+   vec2(1, 1),
+   vec2(1, 0),
+
+   // square at 0 0 
+   vec2(0, 0),
+   vec2(0, 0.25),
+   vec2(0.25, 0.25),
+   vec2(0.25, 0),
+
+   // square at 1 0 
+   vec2(0.25, 0),
+   vec2(0.25, 0.25),
+   vec2(0.5, 0.25),
+   vec2(0.5, 0.0),
+
+   // square at 2 0
+   vec2(0.5, 0),
+   vec2(0.5, 0.25),
+   vec2(0.75, 0.25),
+   vec2(0.75, 0),
+
+   // square at 3 0
+   vec2(0.75, 0.0),
+   vec2(0.75, 0.25),
+   vec2(1, 0.25),
+   vec2(1, 0.0),
+
+   // square at 0 1 
+   vec2(0, 0.25),
+   vec2(0, 0.5),
+   vec2(0.25, 0.5),
+   vec2(0.25, 0.25),
+
+   // square at 1 1
+   vec2(0.25, 0.25),
+   vec2(0.25, 0.5),
+   vec2(0.5, 0.5),
+   vec2(0.5, 0.25),
+
+   // square at 2 1
+   vec2(0.5, 0.25),
+   vec2(0.5, 0.5),
+   vec2(0.75, 0.5),
+   vec2(0.75, 0.25),
+
+   // square at 3 1
+   vec2(0.75, 0.25),
+   vec2(0.75, 0.5),
+   vec2(1, 0.5),
+   vec2(1, 0.25),
+
+   // square at 0 2
+   vec2(0, 0.5),
+   vec2(0, 0.625),
+   vec2(0.25, 0.625),
+   vec2(0.25, 0.5),
+
+   // square at 1 2
+   vec2(0.25, 0.5),
+   vec2(0.25, 0.625),
+   vec2(0.5, 0.625),
+   vec2(0.5, 0.5),
+
+   // square at 2 2
+   vec2(0.5, 0.5),
+   vec2(0.5, 0.625),
+   vec2(0.75, 0.625),
+   vec2(0.75, 0.5),
+
+   // square at 3 2
+   vec2(0.75, 0.5),
+   vec2(0.75, 0.625),
+   vec2(1, 0.625),
+   vec2(1, 0.5),
+
+   // square at 0-3 2.5
+   vec2(0, 0.625),
+   vec2(0, 0.75),
+   vec2(0.1, 0.75),
+   vec2(0.1, 0.625),
+
+];
+
+// Function to create a quad (rectangle) from four vertices
+function quad(a, b, c, d) {
+   var t1 = subtract(vertices[b], vertices[a]);
+   var t2 = subtract(vertices[c], vertices[b]);
+   var normal = cross(t1, t2);
+   var normal = vec3(normal);
+
+   // add points, normals, and texture coordinates to the arrays
+   pointsArray.push(vertices[a]);
+   normalsArray.push(normal);
+
+   pointsArray.push(vertices[b]);
+   normalsArray.push(normal);
+
+   pointsArray.push(vertices[c]);
+   normalsArray.push(normal);
+
+   pointsArray.push(vertices[a]);
+   normalsArray.push(normal);
+
+   pointsArray.push(vertices[c]);
+   normalsArray.push(normal);
+
+   pointsArray.push(vertices[d]);
+   normalsArray.push(normal);
+}
+
+// Function to generate the cube by creating six quads with appropriate vertices
+function colorCube() {
+   quad(1, 0, 3, 2); // Front face
+   quad(2, 3, 7, 6); // Right face
+   quad(3, 0, 4, 7); // Bottom face
+   quad(6, 5, 1, 2); // Top face
+   quad(4, 5, 6, 7); // Back face
+   quad(5, 4, 0, 1); // Left face
+}
+
+// TRACKBALL HORIZONTAL
+var  angle = 0.0;
+var  axis = [0, 1, 0];
+
+var 	trackingMouse = false;
+var   trackballMove = false;
+
+var lastPos = [0, 0, 0];
+var curx, startX;
+
+function trackballView( x ) {
+   var d;
+   var v = [];
+
+   v[0] = x;
+   v[1] = 0;
+
+   d = v[0]*v[0];
+   if (d < 1.0) {
+      v[2] = Math.sqrt(1.0 - d);
+   }
+   else {
+      v[2] = 0.0;
+   }
+
+   return v;
+}
+
+function mouseMotion( x )
+{
+   var dx, dz;
+
+   var curPos = trackballView( x );
+   if(trackingMouse) {
+   dx = curPos[0] - lastPos[0];
+   dz = curPos[2] - lastPos[2];
+
+      if (dx || dz) {
+         angle = 2 * Math.sqrt(dx*dx + dz*dz);
+
+         axis[0] = lastPos[1]*curPos[2] - lastPos[2]*curPos[1];
+         axis[1] = lastPos[2]*curPos[0] - lastPos[0]*curPos[2];
+         axis[2] = lastPos[0]*curPos[1] - lastPos[1]*curPos[0];
+
+         lastPos[0] = curPos[0];
+         lastPos[2] = curPos[2];
+      }
+   }
+   render();
+}
+
+function startMotion( x ) {
+   trackingMouse = true;
+   startX = x;
+   curx = x;
+
+   lastPos = trackballView( x );
+   trackballMove = true;
+}
+
+// WINDOW ONLOAD
+window.onload = function init() {
+   canvas = document.getElementById("gl-canvas");
+
+   gl = WebGLUtils.setupWebGL(canvas);
+   if (!gl) {
+      alert("WebGL isn't available");
+   }
+
+   gl.viewport(0, 0, canvas.width, canvas.height);
+
+   aspect = canvas.width / canvas.height;
+
+   gl.clearColor(1.0, 1.0, 1.0, 1.0);
+
+   gl.enable(gl.DEPTH_TEST);
+
+   //
+   //  Load shaders and initialize attribute buffers
+   //
+   program = initShaders(gl, "vertex-shader", "fragment-shader");
+   gl.useProgram(program);
+
+   colorCube();
+   
+   // different buffers
+   var nBuffer = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
+   gl.bufferData(gl.ARRAY_BUFFER, flatten(normalsArray), gl.STATIC_DRAW);
+
+   var vNormal = gl.getAttribLocation(program, "vNormal");
+   gl.vertexAttribPointer(vNormal, 3, gl.FLOAT, false, 0, 0);
+   gl.enableVertexAttribArray(vNormal);
+
+   var vBuffer = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+   gl.bufferData(gl.ARRAY_BUFFER, flatten(pointsArray), gl.STATIC_DRAW);
+
+   var vPosition = gl.getAttribLocation(program, "vPosition");
+   gl.vertexAttribPointer(vPosition, 4, gl.FLOAT, false, 0, 0);
+   gl.enableVertexAttribArray(vPosition);
+
+   var tBuffer = gl.createBuffer();
+   gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
+   gl.bufferData(gl.ARRAY_BUFFER, flatten(texCoordsArray), gl.STATIC_DRAW);
+
+   var vTexCoord = gl.getAttribLocation(program, "vTexCoord");
+   gl.vertexAttribPointer(vTexCoord, 2, gl.FLOAT, false, 0, 0);
+   gl.enableVertexAttribArray(vTexCoord);
+
+   // initial auto rotation
+   angle = 0.2;
+   axis = normalize(axis);
+   rMatrix = mat4();
+   rMatrix = mult(rMatrix, rotate(angle, axis));
+
+   // texture atlas properties
+   textureAtlasObject = gl.createTexture();
+   gl.bindTexture(gl.TEXTURE_2D, textureAtlasObject);
+   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture_atlas);
+   gl.generateMipmap(gl.TEXTURE_2D);
+   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+   // MOUSE ACTION LISTENERS
+   canvas.addEventListener("mousedown", function(event){
+      var rect = canvas.getBoundingClientRect();
+      var x = 2*(event.clientX-rect.left)/canvas.width-1;
+      var y = 2*(canvas.height-(event.clientY-rect.top))/canvas.height-1;
+      startMotion( x );
+   });
+   
+   window.addEventListener("mouseup", function(event){
+      trackingMouse = false;
+   });
+
+   canvas.addEventListener("mousemove", function(event){
+      if (trackingMouse) {
+         var rect = canvas.getBoundingClientRect();
+         var x = 2*(event.clientX-rect.left)/canvas.width-1;
+         var y = 2*(canvas.height-(event.clientY-rect.top))/canvas.height-1;
+         mouseMotion( x );
+      }
+   });
+
+   canvas.addEventListener("mouseout", function(event){ 
+      trackingMouse = false;
+   });
+
+   canvas.addEventListener("wheel", function(event){
+      event.preventDefault(); // Prevent scrolling in the browser
+      var delta = Math.sign(event.deltaY);
+      if ((zoomLevel + delta >= -4) && (zoomLevel + delta <= 2)) {
+         zoomLevel += delta;
+      }
+
+      if (zoomLevel < 0) {
+         yZoom = 5;
+      }
+      else {
+         yZoom = 5 + zoomLevel;
+      }
+  });
+
+   // BUTTON ACTION LISTENERS
+   document.getElementById("Reset").onclick = function (event) {
+      autoSolving = false;
+      reset();
+      document.getElementById('Auto').textContent = 'Auto Solve';
+   };
+
+   document.getElementById("Solve").onclick = function (event) {
+      autoSolving = false;
+      solve();
+      document.getElementById('Auto').textContent = 'Auto Solve';
+   };
+
+   document.getElementById("Previous").onclick = function (event) {
+      autoSolving = false;
+      previous();
+      document.getElementById('Auto').textContent = 'Auto Solve';
+   };
+
+   document.getElementById("Auto").onclick = function (event) {
+      if (!autoSolving) {
+         autoSolving = true;
+         autoSolve();
+         document.getElementById('Auto').textContent = 'Auto Solving...';
+      }
+      else {  
+         autoSolving = false;
+         document.getElementById('Auto').textContent = 'Auto Solve';
+      }
+   }
+   animate();
+}
+
+// FOR LIGHTING AND CAMERA MOVEMENT
+function animate() {
+   theta += (2 * Math.PI) / (500);
+   render();
+   requestAnimationFrame(animate);
+}
+
+// MAIN RENDER FUNCTION
+var render = function () {
+   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+   // LIGHTING
+   lightPosition = vec4(2 * radius * Math.sin(theta), 30, radius * Math.cos(theta));
+   gl.uniform4fv(gl.getUniformLocation(program, "lightPosition"),
+      flatten(lightPosition));
+
+   // VIEWING
+   eye = vec3(7 + zoomLevel, yZoom, 7 + zoomLevel);
+   mvMatrix = lookAt(eye, at, up);
+   modelView = mvMatrix;
+
+   rMatrix = mult(rMatrix, rotate(angle, axis));
+
+   pMatrix = perspective(fovy, aspect, near, far);
+   projection = pMatrix;
+
+   gl.uniformMatrix4fv(gl.getUniformLocation(program,
+      "modelViewMatrix"), false, flatten(modelView));
+
+   gl.uniformMatrix4fv(gl.getUniformLocation(program,
+      "rotationMatrix"), false, flatten(rMatrix));
+
+   gl.uniformMatrix4fv(gl.getUniformLocation(program, "projectionMatrix"),
+      false, flatten(projection));
+
+   // SMALLEST PLATE RENDER
+   var smallX = getTranslation(pillarAssignments[solutionStep][3])[0];
+   var smallY = heightOnPillar[solutionStep][3];
+   var smallZ = getTranslation(pillarAssignments[solutionStep][3])[1];
+   renderSmall(smallX, smallY, smallZ);
+
+   // SMALLER MIDDLE PLATE RENDER
+   var smallmidX = getTranslation(pillarAssignments[solutionStep][2])[0];
+   var smallmidY = heightOnPillar[solutionStep][2];
+   var smallmidZ = getTranslation(pillarAssignments[solutionStep][2])[1];
+   renderSmallMid(smallmidX, smallmidY, smallmidZ);
+
+   // BIGGER MIDDLE PLATE RENDER
+   var bigmidX = getTranslation(pillarAssignments[solutionStep][1])[0];
+   var bigmidY = heightOnPillar[solutionStep][1];
+   var bigmidZ = getTranslation(pillarAssignments[solutionStep][1])[1];
+   renderBigMid(bigmidX, bigmidY, bigmidZ);
+
+   //  BIGGEST PLATE RENDER
+   var bigX = getTranslation(pillarAssignments[solutionStep][0])[0];
+   var bigY = heightOnPillar[solutionStep][0];
+   var bigZ = getTranslation(pillarAssignments[solutionStep][0])[1];
+   renderLarge(bigX, bigY, bigZ);
+
+   // RENDER PILLARS
+   renderPillars();
+
+   // GROUND RENDER
+   renderGround();
+}
+
+// TEXTURE ATLAS FOR THE CUBES
+var texture_atlas = new Image();
+texture_atlas.src = "./images/texture_atlas_final.png";
+
+var textureAtlasObject;
+
+// PLATE PROPERTIES
+
+// biggest plate
+var big_length = 1;
+var big_height = big_length/2;
+var big_width = big_length;
+
+// big middle plate
+var bigmid_length = 0.8;
+var bigmid_height = bigmid_length/2;
+var bigmid_width = bigmid_length;
+
+// small middle plate
+var smallmid_length = 0.6;
+var smallmid_height = smallmid_length/2;
+var smallmid_width = smallmid_length;
+
+// smallest plate
+var small_length = .4;
+var small_height = small_length/2;
+var small_width = small_length;
+
+// PROPERTIES NEEDED TO RENDER THE LARGE PLATE
+function renderLarge(x, y, z) {
+   // light properties
+   materialShininess = 100;
+
+   lightAmbient = vec4(1, 0.5, 0.6, 1.0);
+   lightDiffuse = vec4(1, .4, .6, 1.0);
+   lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
+
+   materialAmbient = vec4(0.9, .7, 0.8, 1.0);
+   materialDiffuse = vec4(0.2, 0.2, 0.2, 1.0);
+   materialSpecular = vec4(0.8, 0.8, 0.8, 1.0);
+
+   transformationMatrix = mat4(
+      big_length, 0.0, 0.0, x,
+      0.0, big_height, 0.0, y + big_height / 2,
+      0.0, 0.0, big_width, z,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   textureCoordArrayPush(12, 12, 8, 8);
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// PROPERTIES NEEDED TO RENDER THE LARGER MIDDLE PLATE
+function renderBigMid(x, y, z) {
+   materialShininess = 100;
+
+   lightAmbient = vec4(0.8, 0.4, 0.8, 1.0);
+   lightDiffuse = vec4(.9, .9, .9, 1.0);
+   lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
+
+   materialAmbient = vec4(1.0, .4, 1.0, 1.0);
+   materialDiffuse = vec4(0.5, 0.5, 0.9, 1.0);
+   materialSpecular = vec4(1.0, 1, 1, 1.0);
+
+   transformationMatrix = mat4(
+      bigmid_length, 0.0, 0.0, x,
+      0.0, bigmid_height, 0.0, y + bigmid_height / 2,
+      0.0, 0.0, bigmid_width, z,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   textureCoordArrayPush(11, 11, 7, 7);
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// PROPERTIES NEEDED TO RENDER THE SMALLER MIDDLE PLATE
+function renderSmallMid(x, y, z) {
+   materialShininess = 100;
+
+   lightAmbient = vec4(0.35, 0.35, 0.5, 1.0);
+   lightDiffuse = vec4(.7, .7, 1, 1.0);
+   lightSpecular = vec4(.7, .7, 1.0, 1.0);
+
+   materialAmbient = vec4(.7, 0.7, .7, 1.0);
+   materialDiffuse = vec4(.7, 0.7, 0.4, 1.0);
+   materialSpecular = vec4(1, 0.1, 1.0, 1.0);
+
+   transformationMatrix = mat4(
+      smallmid_length, 0.0, 0.0, x,
+      0.0, smallmid_height, 0.0, y + smallmid_height / 2,
+      0.0, 0.0, smallmid_width, z,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   textureCoordArrayPush(9, 9, 3, 3);
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// PROPERTIES NEEDED TO RENDER THE SMALLEST PLATE
+function renderSmall(x, y, z) {
+   materialShininess = 100;
+
+   lightAmbient = vec4(0.8, 0.4, 0.8, 1.0);
+   lightDiffuse = vec4(.9, .9, .9, 1.0);
+   lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
+
+   materialAmbient = vec4(1.0, .4, 1.0, 1.0);
+   materialDiffuse = vec4(0.5, 0.5, 0.9, 1.0);
+   materialSpecular = vec4(1.0, 1, 1, 1.0);
+
+   transformationMatrix = mat4(
+      small_length, 0.0, 0.0, x,
+      0.0, small_height, 0.0, y + small_height / 2,
+      0.0, 0.0, small_width, z,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   textureCoordArrayPush(10, 10, 4, 4);
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// GROUND LOGIC AND TRANSFORMATIONS
+function renderGround() {
+   // ground properties
+   var ground_length = 6 * big_length;
+   var ground_height = 6 * big_length;
+   var ground_width = 6 * big_length;
+
+   materialShininess = 100;
+
+   lightAmbient = vec4(1, 1, 1, 1.0);
+   lightDiffuse = vec4(0.9, 0.9, 0.9, 1.0);
+   lightSpecular = vec4(1, 1, 1, 1.0);
+
+   materialAmbient = vec4(0.65, 0.65, 0.65, 1.0);
+   materialDiffuse = vec4(0.3, 0.2, 0.3, 1.0);
+   materialSpecular = vec4(.5, 0.5, .5, 1.0);
+
+   transformationMatrix = mat4(
+      ground_length, 0.0, 0.0, 0,
+      0.0, ground_height, 0.0, -ground_height / 2,
+      0.0, 0.0, ground_width, 0,
+      0.0, 0.0, 0.0, 1.0
+   );
+
+   commonShaderConnect();
+   textureCoordArrayPush(5, 1, 6, 4);
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// PILLAR LOGIC AND TRANSFORMATIONS
+function renderPillars() {
+   // shared pillar properties
+   var pillar_length = 0.13;
+   var pillar_height = 1.5;
+   var pillar_width = 0.13;
+
+   materialShininess = 100;
+
+   lightAmbient = vec4(1, 1, 1, 1.0);
+   lightDiffuse = vec4(0.9, 0.9, 0.9, 1.0);
+   lightSpecular = vec4(1, 1, 1, 1.0);
+
+   materialAmbient = vec4(0.65, 0.65, 0.65, 1.0);
+   materialDiffuse = vec4(0.4, 0.3, 0.4, 1.0);
+   materialSpecular = vec4(.6, 0.6, .6, 1.0);
+
+   textureCoordArrayPush(13, 13, 2, 2);
+   
+   // middle pillar
+   transformationMatrix = mat4(
+      pillar_length, 0.0, 0.0, 0,
+      0.0, pillar_height, 0.0, pillar_height / 2,
+      0.0, 0.0, pillar_width, 0,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+
+   // left pillar
+   transformationMatrix = mat4(
+      pillar_length, 0.0, 0.0, big_length + big_length / 4,
+      0.0, pillar_height, 0.0, pillar_height / 2,
+      0.0, 0.0, pillar_width, big_length + big_length / 4,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+
+   // right pillar
+   transformationMatrix = mat4(
+      pillar_length, 0.0, 0.0, -big_length - big_length / 4,
+      0.0, pillar_height, 0.0, pillar_height / 2,
+      0.0, 0.0, pillar_width, -big_width - big_width / 4,
+      0.0, 0.0, 0.0, 1.0
+   );
+   commonShaderConnect();
+   gl.drawArrays(gl.TRIANGLES, 0, numVertices);
+}
+
+// COMMON FUNCTION FOR SENDING INFORMATION TO THE SHADERS
+function commonShaderConnect() {
+   ambientProduct = mult(lightAmbient, materialAmbient);
+   diffuseProduct = mult(lightDiffuse, materialDiffuse);
+   specularProduct = mult(lightSpecular, materialSpecular);
+
+   gl.uniform1f(gl.getUniformLocation(program,
+      "shininess"), materialShininess);
+   gl.uniform4fv(gl.getUniformLocation(program, "ambientProduct"),
+      flatten(ambientProduct));
+   gl.uniform4fv(gl.getUniformLocation(program, "diffuseProduct"),
+      flatten(diffuseProduct));
+   gl.uniform4fv(gl.getUniformLocation(program, "specularProduct"),
+      flatten(specularProduct));
+
+   gl.uniformMatrix4fv(gl.getUniformLocation(program, "transformationMatrix"),
+      false, flatten(transformationMatrix));
+}
+
+// mapping specific texture to a cube
+function textureCoordMap(w, x, y, z) {
+   texCoordsArray.push(texCoords[w]);
+   texCoordsArray.push(texCoords[x]);
+   texCoordsArray.push(texCoords[y]);
+   texCoordsArray.push(texCoords[w]);
+   texCoordsArray.push(texCoords[y]);
+   texCoordsArray.push(texCoords[z]);
+}
+
+// x = front and back; y = side; z = top; w = bottom
+function textureCoordArrayPush(x, y, z, w) {
+   texCoordsArray = [];
+   textureCoordMap(0+4*x, 1+4*x, 2+4*x, 3+4*x); // front
+   textureCoordMap(0+4*y, 1+4*y, 2+4*y, 3+4*y); // side
+   textureCoordMap(0+4*w, 1+4*w, 2+4*w, 3+4*w); // bottom
+   textureCoordMap(0+4*z, 1+4*z, 2+4*z, 3+4*z); // top
+   textureCoordMap(1+4*x, 0+4*x, 3+4*x, 2+4*x); // back
+   textureCoordMap(0+4*y, 1+4*y, 2+4*y, 3+4*y); // side
+   gl.bufferData(gl.ARRAY_BUFFER, flatten(texCoordsArray), gl.STATIC_DRAW);
+   texCoordsArray = [];
+}
+
+// TOWERS OF HANOI LOGIC
+var solutionStep = 0;
+
+// 0 = middle pilar
+// 1 = left pillar
+// 2 = right pillar
+// indices: 0 = biggest, 1 = bigmid, 2 = smallbig, 3 = smallest
+var pillarAssignments = [
+   [0, 0, 0, 0], // step 0 basis
+   [0, 0, 0, 1], // step 1
+   [0, 0, 2, 1], // step 2
+   [0, 0, 2, 2], // step 3
+   [0, 1, 2, 2], // step 4
+   [0, 1, 2, 0], // step 5
+   [0, 1, 1, 0], // step 6
+   [0, 1, 1, 1], // step 7
+   [2, 1, 1, 1], // step 8
+   [2, 1, 1, 2], // step 9
+   [2, 1, 0, 2], // step 10
+   [2, 1, 0, 0], // step 11
+   [2, 2, 0, 0], // step 12
+   [2, 2, 0, 1], // step 13
+   [2, 2, 2, 1], // step 14
+   [2, 2, 2, 2], // step 15
+];
+
+// returns the x and z translation for the pillar a plate is on
+function getTranslation(pillar) {
+   var x = 0;
+   var z = 0;
+   if (pillar == 1) {
+      x = big_length + big_length / 4;
+      z = big_length + big_length / 4;
+   } else if (pillar == 2) {
+      x = -big_length - big_length / 4;
+      z = -big_length - big_length / 4;
+   }
+
+   return [x, z];
+}
+
+// indices: 0 = biggest, 1 = bigmid, 2 = smallmid, 3 = smallest
+// values: 0 = bottom, 1 = second to bottom, etc.
+// height values: big = 0.75, bigmid = 0.625, smallmid = 0.5, small = 0.375
+var heightOnPillar = [
+   [0, big_height, big_height+bigmid_height, big_height+bigmid_height+smallmid_height],
+   [0, big_height, big_height+bigmid_height, 0],
+   [0, big_height, 0, 0],
+   [0, big_height, 0, smallmid_height],
+   [0, 0, 0, smallmid_height],
+   [0, 0, 0, big_height],
+   [0, 0, bigmid_height, big_height],
+   [0, 0, bigmid_height, bigmid_height+smallmid_height],
+   [0, 0, bigmid_height, bigmid_height+smallmid_height],
+   [0, 0, bigmid_height, big_height],
+   [0, 0, 0, big_height],
+   [0, 0, 0, smallmid_height],
+   [0, big_height, 0, smallmid_height],
+   [0, big_height, 0, 0],
+   [0, big_height, big_height+bigmid_height, 0],
+   [0, big_height, big_height+bigmid_height, big_height+bigmid_height+smallmid_height],
+];
+
+// GAME LOGIC
+var autoSolveFlag = true;
+var autoSolving = false;
+
+function reset() {
+   solutionStep = 0;
+   render();
+}
+
+function solve() {
+   if (solutionStep == 15) {
+      autoSolveFlag = false;
+   } 
+   else {
+      solutionStep = solutionStep + 1;
+      render();
+   }
+}
+
+function previous() {
+   if (solutionStep == 0) {
+      autoSolveFlag = true;
+   } 
+   else {
+      solutionStep = solutionStep - 1;
+      render();
+   }
+}
+
+// auto solve logic
+// next stem every 1 second
+let lastExecution = 0;
+
+function autoSolve(timestamp) {
+   if (autoSolving) {
+      if (timestamp - lastExecution > 1000) {
+         if (autoSolveFlag) {
+               solve();
+         } else {
+               previous();
+         }
+         lastExecution = timestamp;
+      }
+      requestAnimationFrame(autoSolve);
+   }
+}
